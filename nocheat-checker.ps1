@@ -1,5 +1,5 @@
 # ==========================================================
-# NoCheat Checker Launcher (FIXED - Исправлена строка 47)
+# NoCheat Checker Launcher (FIXED - Синтаксис исправлен)
 # ==========================================================
 
 $ErrorActionPreference = "Stop"
@@ -20,8 +20,15 @@ function Clear-PSHistory {
 if (-not $isAdmin) {
     Write-Host "[-] Пожалуйста убедитесь что запустили чекер от имени администратора, без них он не может работать!" -ForegroundColor Red
     Write-Host "[*] Запрашиваются права администратора..." -ForegroundColor Yellow
-    $url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1"
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command irm $url | iex"
+    
+    # ПРОСТОЙ И РАБОЧИЙ СПОСОБ БЕЗ КАВЫЧЕК
+    $scriptBlock = {
+        $url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1"
+        irm $url | iex
+    }
+    
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command & { $scriptBlock }"
+    
     Clear-PSHistory
     exit
 }
