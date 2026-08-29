@@ -3,11 +3,11 @@
 Minecraft bite, process, file cheat checker.
 Powershell runs
 
-irm https://raw.githubusercontent.com/ | iex
+irm https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1 | iex
 
 CMD Runs
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "powershell irm https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat-checker.ps1 | iex"
 
 Additional
 
