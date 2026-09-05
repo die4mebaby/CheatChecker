@@ -1,48 +1,28 @@
-# ==========================================================
-# NoCheat Checker Launcher
-# ==========================================================
-
 $ErrorActionPreference = "Stop"
 
-Write-Host "==========================================" -ForegroundColor Yellow
-Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
-Write-Host "==========================================" -ForegroundColor Yellow
-
-$repoOwner  = "die4mebaby"
-$repoName   = "CheatChecker"
-$branch     = "main"
-$rawBaseUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch"
-$exeUrl     = "$rawBaseUrl/nocheat.checker.exe"
+$rawBaseUrl = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main"
+$exeUrl = "$rawBaseUrl/nocheat.checker.exe"
 
 $workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
-
-if (-not (Test-Path $workDir)) {
-    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-}
-
 $exePath = Join-Path $workDir "nocheat.checker.exe"
 
-try {
-    Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
+New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($exeUrl, $exePath)
-    $wc.Dispose()
+Write-Host "[+] Скачивание..."
 
-    if (-not (Test-Path $exePath)) {
-        throw "Файл чекера не был загружен."
-    }
+Invoke-WebRequest `
+    -Uri $exeUrl `
+    -OutFile $exePath
 
-    if ((Get-Item $exePath).Length -eq 0) {
-        throw "Загруженный файл пуст."
-    }
+if (Test-Path $exePath) {
+    $file = Get-Item $exePath
 
-    Write-Host "[+] Запуск чекера..." -ForegroundColor Green
+    Write-Host "[+] Файл скачан"
+    Write-Host "[+] Размер: $($file.Length) байт"
 
-    Start-Process -FilePath $exePath -WorkingDirectory $workDir
+    $hash = Get-FileHash $exePath -Algorithm SHA256
+    Write-Host "[+] SHA256: $($hash.Hash)"
+
+    Write-Host ""
+    Write-Host "[!] Файл НЕ запускается."
 }
-catch {
-    Write-Host "[-] Ошибка: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-exit
