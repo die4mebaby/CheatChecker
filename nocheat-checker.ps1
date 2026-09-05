@@ -1,28 +1,22 @@
 $ErrorActionPreference = "Stop"
 
-$rawBaseUrl = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main"
-$exeUrl = "$rawBaseUrl/nocheat.checker.exe"
+$url = "https://raw.githubusercontent.com/die4mebaby/CheatChecker/main/nocheat.checker.exe"
 
-$workDir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
-$exePath = Join-Path $workDir "nocheat.checker.exe"
+$dir = Join-Path $env:LOCALAPPDATA "NoCheatChecker"
+$file = Join-Path $dir "nocheat.checker.exe"
 
-New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
 
-Write-Host "[+] Скачивание..."
+Write-Host "Downloading..."
 
-Invoke-WebRequest `
-    -Uri $exeUrl `
-    -OutFile $exePath
+Invoke-WebRequest -Uri $url -OutFile $file
 
-if (Test-Path $exePath) {
-    $file = Get-Item $exePath
+Write-Host "Downloaded:"
+Write-Host $file
+Write-Host "Size: $((Get-Item $file).Length) bytes"
 
-    Write-Host "[+] Файл скачан"
-    Write-Host "[+] Размер: $($file.Length) байт"
+Write-Host "SHA256:"
+(Get-FileHash $file -Algorithm SHA256).Hash
 
-    $hash = Get-FileHash $exePath -Algorithm SHA256
-    Write-Host "[+] SHA256: $($hash.Hash)"
-
-    Write-Host ""
-    Write-Host "[!] Файл НЕ запускается."
-}
+Write-Host ""
+Write-Host "Download completed. The program was NOT started."
