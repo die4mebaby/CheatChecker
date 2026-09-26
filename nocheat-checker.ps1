@@ -27,10 +27,6 @@ if (-not $isAdmin) {
     exit
 }
 
-Write-Host "==========================================" -ForegroundColor Yellow
-Write-Host "         NoCheat Checker Loader           " -ForegroundColor Yellow
-Write-Host "==========================================" -ForegroundColor Yellow
-
 # ссылки на файлы в репо
 $repoOwner  = "die4mebaby"
 $repoName   = "CheatChecker"
